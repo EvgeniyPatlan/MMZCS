@@ -1,0 +1,17 @@
+[2024-09-27 17:19:06] Cleaned up test files.
+[2024-09-27 17:19:06] Running test: Simple Text
+[2024-09-27 17:19:06] Created test file test_files/input_Simple_Text.txt
+[2024-09-27 17:19:06] Running: perl lab1.pl --input test_files/input_Simple_Text.txt --encrypted test_files/encrypted_Simple_Text.enc --decrypted test_files/decrypted_Simple_Text.txt --polynomial 285 --init_value 12345 --size 32
+[2024-09-27 17:19:06] Files test_files/input_Simple_Text.txt and test_files/decrypted_Simple_Text.txt match.
+[2024-09-27 17:19:06] Test 'Simple Text' passed.
+[2024-09-27 17:19:06] Running test: Repeating Pattern
+[2024-09-27 17:19:06] Created test file test_files/input_Repeating_Pattern.txt
+[2024-09-27 17:19:06] Running: perl lab1.pl --input test_files/input_Repeating_Pattern.txt --encrypted test_files/encrypted_Repeating_Pattern.enc --decrypted test_files/decrypted_Repeating_Pattern.txt --polynomial 29 --init_value 54321 --size 64
+[2024-09-27 17:19:38] Files test_files/input_Repeating_Pattern.txt and test_files/decrypted_Repeating_Pattern.txt match.
+[2024-09-27 17:19:38] Test 'Repeating Pattern' passed.
+[2024-09-27 17:19:38] Running test: Binary Data
+[2024-09-27 17:19:38] Created test file test_files/input_Binary_Data.txt
+[2024-09-27 17:19:38] Running: perl lab1.pl --input test_files/input_Binary_Data.txt --encrypted test_files/encrypted_Binary_Data.enc --decrypted test_files/decrypted_Binary_Data.txt --polynomial 511 --init_value 13579 --size 16
+[2024-09-27 17:19:38] Files test_files/input_Binary_Data.txt and test_files/decrypted_Binary_Data.txt match.
+[2024-09-27 17:19:38] Test 'Binary Data' passed.
+[2024-09-27 17:19:38] Cleaned up test files.

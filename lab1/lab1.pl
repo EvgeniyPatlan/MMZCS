@@ -14,12 +14,14 @@ sub log_message {
     print $log_fh "[$timestamp] $message\n";
 }
 
-# Custom LFSR function for key stream generation
+# LFSR function for generating the key stream
 sub lfsr {
     my ($init_value, $polynomial, $size, $key_length) = @_;
     my $state = $init_value;
     my @key_stream;
 
+    log_message("Initial LFSR state: $state, Polynomial: $polynomial, Size: $size, Key Length: $key_length");
+    
     for (1 .. $key_length) {
         my $feedback = $state & 1;
         my $xor_val = 0;
@@ -34,25 +36,59 @@ sub lfsr {
 
         push @key_stream, $feedback;
     }
+
+    log_message("Generated key stream: @key_stream");
     return @key_stream;
 }
 
-# Function to read and return file content
-sub read_file_block {
-    my ($fh, $block_size) = @_;
-    my $buffer;
-    my $bytes_read = read($fh, $buffer, $block_size);
-    return ($buffer, $bytes_read);
+# Function to read a file and return its content
+sub read_file {
+    my ($filename) = @_;
+    open my $fh, '<', $filename or die "Failed to open input file $filename: $!";
+    binmode($fh);
+    my $content = do { local $/; <$fh> };
+    close $fh;
+    return $content;
 }
 
-# Write a block of data to a file
-sub write_file_block {
-    my ($fh, $content) = @_;
+# Function to write binary content to a file
+sub write_file {
+    my ($filename, $content) = @_;
+    open my $fh, '>', $filename or die "Failed to create output file $filename: $!";
+    binmode($fh);
     print $fh $content;
+    close $fh;
 }
 
-# XOR operation for encryption/decryption using LFSR key stream
+# Function to XOR the data with the generated key stream and log details
 sub xor_data {
+    my ($data, @key_stream) = @_;
+    my $key_index = 0;
+    my $output_data = '';
+
+    foreach my $byte (split //, $data) {
+        my $byte_val = ord($byte);
+        my $xor_byte = 0;
+
+        for (my $i = 0; $i < 8; $i++) {
+            my $bit = ($byte_val >> $i) & 1;
+            my $key_bit = $key_stream[$key_index++];
+            my $result_bit = $bit ^ $key_bit;
+            $xor_byte |= $result_bit << $i;
+
+            log_message("Byte: $byte_val, Bit: $bit, Key bit: $key_bit, XOR result: $result_bit");
+        }
+
+        log_message("Original byte: $byte_val, XOR byte: $xor_byte");
+        $output_data .= chr($xor_byte);
+    }
+
+    return $output_data;
+}
+
+
+# Function to XOR the data with the generated key stream
+sub xor_data1 {
     my ($data, @key_stream) = @_;
     my $key_index = 0;
     my $output_data = '';
@@ -64,8 +100,11 @@ sub xor_data {
         for (my $i = 0; $i < 8; $i++) {
             $xor_byte |= (($byte_val >> $i) & 1) ^ $key_stream[$key_index++] << $i;
         }
+
+        log_message("Original byte: $byte_val, XOR byte: $xor_byte");
         $output_data .= chr($xor_byte);
     }
+
     return $output_data;
 }
 
@@ -74,26 +113,19 @@ sub encrypt_decrypt_file {
     my ($input_file, $output_file, $polynomial, $init_value, $size, $operation) = @_;
     log_message("$operation operation started for file: $input_file");
 
-    open my $in_fh, '<', $input_file or die "Failed to open input file $input_file: $!";
-    binmode($in_fh);
+    my $data = read_file($input_file);
+    my $key_length = length($data) * 8;
 
-    open my $out_fh, '>', $output_file or die "Failed to open output file $output_file: $!";
-    binmode($out_fh);
-
-    my $data = do { local $/; <$in_fh> };
-    my $key_length = length($data) * 8;  # Length in bits
+    log_message("Key length (in bits): $key_length");
 
     my @key_stream = lfsr($init_value, $polynomial, $size, $key_length);
     my $output_data = xor_data($data, @key_stream);
 
-    write_file_block($out_fh, $output_data);
-
+    write_file($output_file, $output_data);
     log_message("$operation operation completed for file: $input_file");
-    close $in_fh;
-    close $out_fh;
 }
 
-# Function to compare two files byte by byte
+# Function to compare two files byte by byte and log the differences
 sub compare_files {
     my ($file1, $file2) = @_;
     log_message("Comparing files: $file1 and $file2");
@@ -103,15 +135,20 @@ sub compare_files {
     binmode($fh1);
     binmode($fh2);
 
+    my $pos = 0;
     while (1) {
-        my ($data1, $bytes1) = read_file_block($fh1, 1024);
-        my ($data2, $bytes2) = read_file_block($fh2, 1024);
+        my $byte1;
+        my $byte2;
+        my $bytes1 = read($fh1, $byte1, 1);
+        my $bytes2 = read($fh2, $byte2, 1);
 
         last if !$bytes1 && !$bytes2;
-        if ($bytes1 != $bytes2 || $data1 ne $data2) {
-            log_message("Files do not match: $file1 and $file2");
+
+        if ($byte1 ne $byte2) {
+            log_message("Difference at position $pos: File1 = " . ord($byte1) . ", File2 = " . ord($byte2));
             return 0;
         }
+        $pos++;
     }
 
     log_message("Files match: $file1 and $file2");
@@ -120,21 +157,27 @@ sub compare_files {
     return 1;
 }
 
-# Function to validate polynomial and initial value
-sub validate_inputs {
-    my ($polynomial, $init_value, $size) = @_;
-    log_message("Validating inputs: Polynomial = $polynomial, Init value = $init_value, Size = $size");
+# Command-line options and help message
+sub print_help {
+    print <<'END_HELP';
+Usage: perl lab1.pl [options]
 
-    die "Invalid polynomial! Must be between 1 and 2^$size-1.\n"
-        if ($polynomial < 1 || $polynomial >= (1 << $size));
+Options:
+  --input=s        Input file to be encrypted/decrypted.
+  --encrypted=s    File to save the encrypted output.
+  --decrypted=s    File to save the decrypted output.
+  --polynomial=i   Polynomial for LFSR (as a decimal integer).
+  --init_value=i   Initial value for LFSR (as a decimal integer).
+  --size=i         Size of the LFSR in bits (1-64).
+  --help           Show this help message.
 
-    die "Invalid initial value! Must be between 1 and 2^$size-1.\n"
-        if ($init_value < 1 || $init_value >= (1 << $size));
-
-    log_message("Input validation passed.");
+Example:
+  perl lab1.pl --input=input.txt --encrypted=enc.txt --decrypted=dec.txt --polynomial=285 --init_value=12345 --size=32
+END_HELP
+    exit;
 }
 
-# Command-line options
+# Parse command-line options
 my $input_file;
 my $encrypted_file;
 my $decrypted_file;
@@ -157,25 +200,28 @@ if ($help) {
     print_help();
 }
 
-die "Input file, encrypted file, decrypted file, polynomial, and init_value are required."
+# Ensure required parameters are provided
+die "Input file, encrypted file, decrypted file, polynomial, and init_value are required. Use --help for more information.\n"
     unless $input_file && $encrypted_file && $decrypted_file && $polynomial && $init_value;
 
+# Ensure size is between 1 and 64 bits
 die "Invalid size! Must be between 1 and 64.\n" unless $size >= 1 && $size <= 64;
 
-validate_inputs($polynomial, $init_value, $size);
-
-# Encrypt and decrypt files
+# Encrypt the file
 encrypt_decrypt_file($input_file, $encrypted_file, $polynomial, $init_value, $size, "Encryption");
 print "File has been encrypted. Output saved to $encrypted_file\n";
 
+# Decrypt the file
 encrypt_decrypt_file($encrypted_file, $decrypted_file, $polynomial, $init_value, $size, "Decryption");
 print "File has been decrypted. Output saved to $decrypted_file\n";
 
-# Compare decrypted file with the original
+# Compare the original and decrypted files
 if (compare_files($input_file, $decrypted_file)) {
     print "Decrypted file matches the original file. Encryption is correct.\n";
 } else {
     print "Decrypted file does not match the original file. Check the algorithm.\n";
 }
 
+# Close the log file
 close $log_fh;
+

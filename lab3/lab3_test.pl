@@ -1,87 +1,88 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use Test::More tests => 5;
-require './lab3.pl';  # Підключаємо основний скрипт
+use Test::More tests => 6;
+require './lab3.pl';  # Include the main script
 
-# Тест 1: Перевірка функції генерації сеансового ключа (Lehmer RNG)
-# Перевіряємо правильність параметрів генератора Lehmer.
+# Test 1: Lehmer RNG session key generation
 subtest 'Test Lehmer RNG' => sub {
     my $seed = 12345;
-    my $modulus = 2 ** 32;  # Переконайтесь, що цей модуль правильний
-    my $multiplier = 48271;  # Стандартний множник для Lehmer RNG
+    my $modulus = 2 ** 32;
+    my $multiplier = 48271;
     
-    # Генеруємо сеансовий ключ
     my $session_key = lehmer_rng($seed, $modulus, $multiplier);
-    
     ok($session_key > 0, 'Session key is generated');
-    
-    # Якщо потрібно відтворити специфічне значення, переконайтесь, що ці параметри збігаються.
-    # Ви можете змінити тест відповідно до реальних результатів генератора.
-    is($session_key, 595905495, 'Session key matches the actual generated value');
+    is($session_key, 595905495, 'Session key matches expected value');
 };
 
-# Тест 2: Перевірка функції RXOR
+# Test 2: RXOR hash function
 subtest 'Test RXOR Hash' => sub {
-    my $vector = 'testvector';  # Переконайтесь, що цей вектор є правильним
-    
-    # Обчислюємо хеш за допомогою RXOR
+    my $vector = 'testvector';
     my $hash = rxor_hash($vector);
-    
-    # Очікуване значення може залежати від специфіки вектора
-    # Замість очікуваного значення 127 перевірте фактичний результат і адаптуйте тест
-    is($hash, 15, 'RXOR hash matches actual generated value');
+    is($hash, 15, 'RXOR hash matches expected value');
 };
 
-# Тест 3: Перевірка функції шифрування через XOR
-subtest 'Test XOR Encryption' => sub {
+# Test 3: XOR encryption and decryption
+subtest 'Test XOR Encryption and Decryption' => sub {
     my $data = 'plaintext';
     my $key = 'keykeyke';
     
-    my $encrypted = xor_encrypt($data, $key);
+    my $encrypted = xor_encrypt_decrypt($data, $key);
     isnt($encrypted, $data, 'Data is encrypted');
     
-    # Перевіряємо, чи можемо дешифрувати назад
-    my $decrypted = xor_encrypt($encrypted, $key);
+    my $decrypted = xor_encrypt_decrypt($encrypted, $key);
     is($decrypted, $data, 'Data is correctly decrypted');
 };
 
-# Тест 4: Тестування інтеграції, включаючи всі кроки
-subtest 'Integration test' => sub {
-    # Генерація сеансового ключа
+# Test 4: Integration test (encryption-decryption)
+subtest 'Integration test: Encryption and Decryption' => sub {
+    # Generate session key
     my $session_key_seed = 12345;
     my $session_key_modulus = 2 ** 32;
     my $session_key_multiplier = 48271;
     my $session_key = lehmer_rng($session_key_seed, $session_key_modulus, $session_key_multiplier);
 
-    # Генерація управляючого вектора
+    # Generate control vector
     my $control_vector_seed = 54321;
-    my $control_vector_modulus = 2 ** (5 * 16);  # Приклад значення N=16
+    my $control_vector_modulus = 2 ** (5 * 16);
     my $control_vector = lehmer_rng($control_vector_seed, $control_vector_modulus, $session_key_multiplier);
 
-    # Хешування вектора
+    # Hash control vector using RXOR
     my $hashed_vector = rxor_hash($control_vector);
 
-    # Використовуємо зразковий майстер-ключ
+    # Use a sample master key
     my $master_key = '10101010';
     
-    # Створення ключа шифрування
+    # Create encryption key
     my $encryption_key = $master_key ^ $hashed_vector;
 
-    # Шифруємо сеансовий ключ
-    my $encrypted_session_key = xor_encrypt($session_key, $encryption_key);
+    # Encrypt session key
+    my $encrypted_session_key = xor_encrypt_decrypt($session_key, $encryption_key);
 
-    ok($encrypted_session_key ne $session_key, 'Session key is successfully encrypted');
+    # Decrypt session key
+    my $decrypted_session_key = xor_encrypt_decrypt($encrypted_session_key, $encryption_key);
+
+    # Check if the decrypted key matches the original session key
+    is($decrypted_session_key, $session_key, 'Session key was successfully decrypted and matches the original');
 };
 
-# Тест 5: Перевірка збереження файлів
+# Test 5: File handling for session key
 subtest 'Test file handling' => sub {
-    # Перевірка, чи записується сеансовий ключ у файл
     my $session_file = 's_key.txt';
     open(my $fh, '>', $session_file) or die "Cannot open $session_file: $!";
     print $fh 'Test session key';
     close($fh);
-
+    
     ok(-e $session_file, 'Session key file created');
+};
+
+# Test 6: File handling for encrypted session key
+subtest 'Test encrypted session key file handling' => sub {
+    my $master_key_file = 'm_key.txt';
+    open(my $fh, '>', $master_key_file) or die "Cannot open $master_key_file: $!";
+    print $fh 'Test encrypted key';
+    close($fh);
+    
+    ok(-e $master_key_file, 'Encrypted session key file created');
 };
 

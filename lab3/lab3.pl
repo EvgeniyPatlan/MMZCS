@@ -32,20 +32,22 @@ sub get_master_key {
     return $master_key;
 }
 
-# XOR encryption function
-sub xor_encrypt {
+# XOR encryption/decryption function
+sub xor_encrypt_decrypt {
     my ($data, $key) = @_;
-    my $encrypted = '';
+    my $result = '';
     for (my $i = 0; $i < length($data); $i++) {
-        $encrypted .= chr(ord(substr($data, $i, 1)) ^ ord(substr($key, $i % length($key), 1)));
+        $result .= chr(ord(substr($data, $i, 1)) ^ ord(substr($key, $i % length($key), 1)));
     }
-    return $encrypted;
+    return $result;
 }
 
 # Main process
+
+# Parameters
 my $N = 16;  # Example key length (adjust as needed)
-my $session_file = "s_key.txt";
-my $master_key_file = "m_key.txt";
+my $session_file = "s_key.txt";  # File to store session key
+my $master_key_file = "m_key.txt";  # File to store encrypted session key
 
 # Step 1: Generate session key using Lehmer algorithm
 my $session_key_seed = 12345;  # Example seed value
@@ -80,7 +82,7 @@ open(my $sk_in, '<', $session_file) or die "Could not open '$session_file' for r
 chomp(my $session_key_plain = <$sk_in>);
 close($sk_in);
 
-my $encrypted_session_key = xor_encrypt($session_key_plain, $encryption_key);
+my $encrypted_session_key = xor_encrypt_decrypt($session_key_plain, $encryption_key);
 
 # Step 7: Save encrypted session key to "m_key.txt"
 open(my $mk_fh, '>', $master_key_file) or die "Could not open '$master_key_file' for writing: $!";
@@ -88,8 +90,28 @@ print $mk_fh $encrypted_session_key;
 close($mk_fh);
 say "Encrypted session key saved to '$master_key_file'.";
 
-# Step 8: Display results
+# Step 8: Display encryption results
 say "Encryption completed successfully.";
 say "Session Key: $session_key";
 say "Encrypted Session Key: $encrypted_session_key";
+
+# Step 9: Decryption process
+# Read the encrypted session key from file
+open(my $mk_in, '<', $master_key_file) or die "Could not open '$master_key_file' for reading: $!";
+chomp(my $encrypted_session_key_read = <$mk_in>);
+close($mk_in);
+
+# Decrypt the session key
+my $decrypted_session_key = xor_encrypt_decrypt($encrypted_session_key_read, $encryption_key);
+
+# Step 10: Display decryption results
+say "Decryption completed successfully.";
+say "Decrypted Session Key: $decrypted_session_key";
+
+# Verify if decryption was successful
+if ($decrypted_session_key == $session_key) {
+    say "Decryption was successful. The original session key has been restored.";
+} else {
+    say "Decryption failed. The session key does not match the original.";
+}
 

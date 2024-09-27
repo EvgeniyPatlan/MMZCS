@@ -1,0 +1,224 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use bigint;
+use Getopt::Long;
+use Time::Piece;
+
+# Open log file for logging
+open my $log_fh, '>', 'encryption.log' or die "Failed to open log file: $!";
+sub log_message {
+    my ($message) = @_;
+    my $timestamp = localtime->strftime('%Y-%m-%d %H:%M:%S');
+    print $log_fh "[$timestamp] $message\n";
+}
+
+# Function for linear feedback shift register (LFSR)
+sub lfsr {
+    my ($state, $polynomial, $size) = @_;
+    my $xor = $state & $polynomial;
+    my $feedback = 0;
+
+    # Calculate XOR parity for polynomial feedback
+    while ($xor) {
+        $feedback ^= $xor & 1;
+        $xor >>= 1;
+    }
+
+    # Shift state and apply feedback
+    $state = ($state >> 1) | ($feedback << ($size - 1));
+
+    return $state;
+}
+
+# Function to read a block of data from file
+sub read_file_block {
+    my ($fh, $block_size) = @_;
+    my $buffer;
+    my $bytes_read = read($fh, $buffer, $block_size);
+    return ($buffer, $bytes_read);
+}
+
+# Function to write a block of data to file
+sub write_file_block {
+    my ($fh, $content) = @_;
+    print $fh $content;
+}
+
+# Encryption/Decryption function
+sub encrypt_decrypt_file {
+    my ($input_file, $output_file, $polynomial, $init_value, $size, $operation) = @_;
+
+    log_message("$operation operation started for file: $input_file");
+    
+    # Open input file for reading
+    open my $in_fh, '<', $input_file or die "Failed to open input file $input_file: $!";
+    binmode($in_fh);
+
+    # Open output file for writing
+    open my $out_fh, '>', $output_file or die "Failed to open output file $output_file: $!";
+    binmode($out_fh);
+
+    # Initialize LFSR state
+    my $state = $init_value;
+    my $block_size = 1024;  # Process in 1024-byte blocks
+
+    my $total_bytes_processed = 0;
+
+    while (1) {
+        # Read the next block of data
+        my ($input_data, $bytes_read) = read_file_block($in_fh, $block_size);
+        last unless $bytes_read;
+
+        my $output_data = '';
+        foreach my $byte (split //, $input_data) {
+            my $key_stream = 0;
+
+            # Generate key stream using LFSR
+            for (1..8) {  # 8 bits per byte
+                $state = lfsr($state, $polynomial, $size);
+                $key_stream = ($key_stream << 1) | ($state & 1);
+            }
+
+            # XOR byte with key stream
+            $output_data .= chr(ord($byte) ^ $key_stream);
+        }
+
+        # Write encrypted data to output file
+        write_file_block($out_fh, $output_data);
+
+        $total_bytes_processed += $bytes_read;
+    }
+
+    close $in_fh;
+    close $out_fh;
+
+    log_message("$operation operation completed for file: $input_file. Total bytes processed: $total_bytes_processed");
+}
+
+# Function to compare two files byte by byte
+sub compare_files {
+    my ($file1, $file2) = @_;
+
+    log_message("Comparing files: $file1 and $file2");
+
+    open my $fh1, '<', $file1 or die "Failed to open file $file1: $!";
+    open my $fh2, '<', $file2 or die "Failed to open file $file2: $!";
+    binmode($fh1);
+    binmode($fh2);
+
+    while (1) {
+        my ($data1, $bytes1) = read_file_block($fh1, 1024);
+        my ($data2, $bytes2) = read_file_block($fh2, 1024);
+
+        last if !$bytes1 && !$bytes2;  # End of both files
+        if ($bytes1 != $bytes2 || $data1 ne $data2) {
+            log_message("Files do not match: $file1 and $file2");
+            return 0;
+        }
+    }
+
+    close $fh1;
+    close $fh2;
+
+    log_message("Files match: $file1 and $file2");
+    return 1;  # Files are identical
+}
+
+# Function to validate if polynomial and initial value are valid
+sub validate_inputs {
+    my ($polynomial, $init_value, $size) = @_;
+
+    log_message("Validating inputs: Polynomial = $polynomial, Init value = $init_value, Size = $size");
+
+    # Check if polynomial is within valid range
+    if ($polynomial < 1 || $polynomial >= (1 << $size)) {
+        die "Invalid polynomial! Must be between 1 and 2^$size-1.\n";
+    }
+
+    # Check if initial value is within valid range
+    if ($init_value < 1 || $init_value >= (1 << $size)) {
+        die "Invalid initial value! Must be between 1 and 2^$size-1.\n";
+    }
+
+    log_message("Input validation passed.");
+}
+
+# Function to print help message
+sub print_help {
+    print <<'END_HELP';
+Usage: perl script.pl [options]
+
+Options:
+  --input=s         Input file to be encrypted/decrypted.
+  --encrypted=s     File to save the encrypted output.
+  --decrypted=s     File to save the decrypted output.
+  --polynomial=i    Polynomial for LFSR, represented as a decimal integer.
+  --init_value=i    Initial value for the LFSR state, represented as a decimal integer.
+  --size=i          Size of the LFSR in bits (1-64). Default is 64 bits.
+  --help            Display this help message.
+
+Description:
+  This script encrypts or decrypts a file using a linear feedback shift register (LFSR) algorithm.
+  The encryption is based on XORing the input file's bytes with a pseudo-random key stream generated by the LFSR.
+
+Example usage:
+  perl script.pl --input input.txt --encrypted encrypted.txt --decrypted decrypted.txt --polynomial 285 --init_value 12345 --size 32
+
+  This will encrypt 'input.txt' to 'encrypted.txt' and then decrypt 'encrypted.txt' back to 'decrypted.txt',
+  using a 32-bit LFSR with the polynomial 285 and an initial value of 12345.
+
+END_HELP
+    exit;
+}
+
+# Parse command-line options
+my $input_file;
+my $encrypted_file;
+my $decrypted_file;
+my $polynomial;
+my $init_value;
+my $size = 64;  # Default LFSR size is 64 bits
+my $help;
+
+GetOptions(
+    "input=s"       => \$input_file,
+    "encrypted=s"   => \$encrypted_file,
+    "decrypted=s"   => \$decrypted_file,
+    "polynomial=i"  => \$polynomial,
+    "init_value=i"  => \$init_value,
+    "size=i"        => \$size,  # Allow user to specify LFSR size
+    "help"          => \$help   # Display help message
+) or die "Error in command-line arguments\n";
+
+# Display help if --help is specified
+if ($help) {
+    print_help();
+}
+
+# Validate required parameters
+die "Input file, encrypted file, decrypted file, polynomial, and init_value are required. Use --help for more information.\n"
+    unless $input_file && $encrypted_file && $decrypted_file && $polynomial && $init_value;
+
+# Ensure size is valid (1-64 bits)
+die "Invalid size! Must be between 1 and 64.\n" unless $size >= 1 && $size <= 64;
+
+# Validate polynomial and initial value
+validate_inputs($polynomial, $init_value, $size);
+
+# Encrypt file
+encrypt_decrypt_file($input_file, $encrypted_file, $polynomial, $init_value, $size, "Encryption");
+print "File has been encrypted. Output saved to $encrypted_file\n";
+
+# Decrypt file (re-encrypt to decrypt using XOR)
+encrypt_decrypt_file($encrypted_file, $decrypted_file, $polynomial, $init_value, $size, "Decryption");
+print "File has been decrypted. Output saved to $decrypted_file\n";
+
+# Compare decrypted file with original file
+if (compare_files($input_file, $decrypted_file)) {
+    print "Decrypted file matches the original file. Encryption is correct.\n";
+} else {
+    print "Decrypted file does not match the original file. Check the algorithm.\n";
+}
+
+close $log_fh;

@@ -1,0 +1,13 @@
+#!/usr/bin/expect
+
+set timeout 10
+
+# Start the client process
+spawn ./tls_client
+
+# Wait for the client's output
+expect "Received: Hello from client!"
+
+# Exit the script
+exit 0
+
